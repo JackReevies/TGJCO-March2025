@@ -1,5 +1,11 @@
 # TGJCO-March2025
 
+# Jack & Luis Submission
+
+To run: `node index` 
+
+Supporting all basic and first 2 bonus features
+
 # Blackjack Coding Challenge
 
 ## Objective
