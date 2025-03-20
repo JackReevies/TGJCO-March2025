@@ -54,8 +54,6 @@ async function createPlayer(i) {
     score: 0,
     busted: false
   }
-  await givePlayerCard(player)
-  await givePlayerCard(player)
 
   return player
 }
@@ -71,11 +69,22 @@ async function getName(i) {
   }
 }
 
+async function getRounds(playerCount = 1) {
+  const maxRounds = Math.floor(52 / (playerCount + 1) / 2)
+  while (true) {
+    const answer = await rl.question(`How many rounds? (max ${maxRounds})`);
+    if (answer.length > 0 && answer.length < 13) {
+      return answer
+    }
+
+    console.log(`Invalid number - please enter between 1 and 12`)
+  }
+}
+
+
 async function main() {
   // Shuffle first
   await fetch("http://localhost:9090/shuffle");
-
-  const dealerHand = [await getCard(), await getCard()]
 
   const numPlayers = await getPlayerCount()
   const players = []
@@ -85,52 +94,67 @@ async function main() {
     players.push(player)
   }
 
-  for (let i = 0; i < numPlayers; i++) {
-    const player = players[i]
-    while (true) {
-      const answer = await rl.question(`Player ${player.name}: Your current score is ${getScoreForHand(player.hand)} (${player.hand.join(', ')}) would you like to Hit or Stand? (H/S)`);
+  const roundCount = await getRounds(numPlayers)
 
-      if (answer.toLowerCase() === 'h') {
-        await givePlayerCard(player)
+  for (let x = 0; x < roundCount; x++) {
+    console.log(`Round ${x + 1} of ${roundCount}`)
+    for (let y = 0; y < numPlayers; y++) {
+      const player = players[y]
+      player.busted = false
+      player.hand = []
+      player.score = 0
 
-        if (player.busted) {
-          // Bust
-          console.log(`Player ${player.name} busted with hand ${player.hand.join(', ')}`)
+      await givePlayerCard(player)
+      await givePlayerCard(player)
+    }
+
+    const dealerHand = [await getCard(), await getCard()]
+
+    for (let i = 0; i < numPlayers; i++) {
+      const player = players[i]
+      while (true) {
+        const answer = await rl.question(`Player ${player.name}: Your current score is ${getScoreForHand(player.hand)} (${player.hand.join(', ')}) would you like to Hit or Stand? (H/S)`);
+
+        if (answer.toLowerCase() === 'h') {
+          await givePlayerCard(player)
+
+          if (player.busted) {
+            // Bust
+            console.log(`Player ${player.name} busted with hand ${player.hand.join(', ')}`)
+            break
+          }
+        } else {
+          // Stand
+          console.log(`Player ${player.name}`)
           break
         }
+      }
+    }
+
+    while (true) {
+      if (getScoreForHand(dealerHand) < 17) {
+        dealerHand.push(await getCard())
       } else {
-        // Stand
-        console.log(`Player ${player.name}`)
         break
       }
     }
-  }
 
-  while (true) {
-    if (getScoreForHand(dealerHand) < 17) {
-      dealerHand.push(await getCard())
-    } else {
-      break
+    const finalDealerScore = getScoreForHand(dealerHand)
+    console.log(`Dealer's hand is ${dealerHand.join(', ')}. Final dealer score is ${finalDealerScore}`)
+
+    const dealerBusted = finalDealerScore > 21
+
+    for (let i = 0; i < numPlayers; i++) {
+      const player = players[i]
+      if ((player.score > finalDealerScore || dealerBusted) && !player.busted) {
+        console.log(`Player ${player.name} WINS against the dealer with a score of ${player.score}`)
+      } else if (player.score === finalDealerScore && !player.busted) {
+        console.log(`Player ${player.name} TIES against the dealer with a score of ${player.score}`)
+      } else {
+        console.log(`Player ${player.name} LOSES against the dealer with a score of ${player.score}`)
+      }
     }
   }
-
-  const finalDealerScore = getScoreForHand(dealerHand)
-  console.log(`Dealer's hand is ${dealerHand.join(', ')}. Final dealer score is ${finalDealerScore}`)
-
-  const dealerBusted = finalDealerScore > 21
-
-  for (let i = 0; i < numPlayers; i++) {
-    const player = players[i]
-    if ((player.score > finalDealerScore || dealerBusted) && !player.busted) {
-      console.log(`Player ${player.name} WINS against the dealer with a score of ${player.score}`)
-    } else if (player.score === finalDealerScore && !player.busted) {
-      console.log(`Player ${player.name} TIES against the dealer with a score of ${player.score}`)
-    } else {
-      console.log(`Player ${player.name} LOSES against the dealer with a score of ${player.score}`)
-    }
-  }
-
-  console.log(JSON.stringify(players))
 
   rl.close()
 }
@@ -143,9 +167,15 @@ async function givePlayerCard(player) {
 }
 
 async function getCard() {
-  const res = await fetch("http://localhost:9090/get-card")
-  const json = await res.json()
-  return json.card.substring(0, 1)
+  try {
+    const res = await fetch("http://localhost:9090/get-card")
+    const json = await res.json()
+    return json.card.substring(0, 1)
+  }
+  catch (e) {
+    console.log("No cards left in deck")
+    process.exit()
+  }
 }
 
 main()
