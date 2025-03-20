@@ -1,5 +1,6 @@
 const readline = require('readline/promises');
 const { stdin: input, stdout: output } = require('process');
+const rl = readline.createInterface({ input, output });
 
 function getScoreForHand(hand) {
   // Sort such that A is last
@@ -30,53 +31,115 @@ function getScoreForHand(hand) {
   return score
 }
 
+async function getPlayerCount() {
+  while (true) {
+    const answer = await rl.question(`How many players are playing? (1-5)`);
+    console.log(answer)
+
+    const numAnswer = Number(answer)
+
+    if (numAnswer < 1 || numAnswer > 5 || Number.isNaN(numAnswer)) {
+      console.log("Invalid number of players")
+      continue
+    }
+
+    return numAnswer
+  }
+}
+
+async function createPlayer(i) {
+  const player = {
+    name: await getName(i),
+    hand: [],
+    score: 0,
+    busted: false
+  }
+  await givePlayerCard(player)
+  await givePlayerCard(player)
+
+  return player
+}
+
+async function getName(i) {
+  while (true) {
+    const answer = await rl.question(`Player ${i + 1}: What is your name?`);
+    if (answer.length > 0 && answer.length < 13) {
+      return answer
+    }
+
+    console.log(`Invalid name - please enter between 1 and 12 characters`)
+  }
+}
+
 async function main() {
   // Shuffle first
   await fetch("http://localhost:9090/shuffle");
 
   const dealerHand = [await getCard(), await getCard()]
-  const playerHand = [await getCard(), await getCard()]
 
-  const rl = readline.createInterface({ input, output });
-  
-  while (true) {
-    const answer = await rl.question(`Player: Your current score is ${getScoreForHand(playerHand)} would you like to Hit or Stand? (H/S)`);
-    console.log(answer)
-    if (answer.toLowerCase() === 'h') {
-      playerHand.push(await getCard())
+  const numPlayers = await getPlayerCount()
+  const players = []
 
-      if (getScoreForHand(playerHand) > 21) {
-        // Bust
-        console.log("Player busted! - You lose")
-        process.exit(0)
+  for (let i = 0; i < numPlayers; i++) {
+    const player = await createPlayer(i)
+    players.push(player)
+  }
+
+  for (let i = 0; i < numPlayers; i++) {
+    const player = players[i]
+    while (true) {
+      const answer = await rl.question(`Player ${player.name}: Your current score is ${getScoreForHand(player.hand)} (${player.hand.join(', ')}) would you like to Hit or Stand? (H/S)`);
+
+      if (answer.toLowerCase() === 'h') {
+        await givePlayerCard(player)
+
+        if (player.busted) {
+          // Bust
+          console.log(`Player ${player.name} busted with hand ${player.hand.join(', ')}`)
+          break
+        }
+      } else {
+        // Stand
+        console.log(`Player ${player.name}`)
+        break
       }
+    }
+  }
+
+  while (true) {
+    if (getScoreForHand(dealerHand) < 17) {
+      dealerHand.push(await getCard())
     } else {
-      // Stand
-      console.log("Player stood!")
       break
     }
   }
 
-  if (getScoreForHand(dealerHand) === 16) {
-    dealerHand.push(await getCard())
-  }
-
   const finalDealerScore = getScoreForHand(dealerHand)
-  const finalPlayerScore = getScoreForHand(playerHand)
+  console.log(`Dealer's hand is ${dealerHand.join(', ')}. Final dealer score is ${finalDealerScore}`)
 
-  console.log(`Dealer: ${finalDealerScore}. Player: ${finalPlayerScore}`)
+  const dealerBusted = finalDealerScore > 21
 
-  if (finalDealerScore > 21) {
-    console.log("Dealer busted! - Player Wins!")
-  } else if (finalPlayerScore > finalDealerScore && finalPlayerScore < 22) {
-    console.log("Player won!")
-  } else if (finalPlayerScore < finalDealerScore && finalDealerScore < 22) {
-    console.log("Dealer won!")
-  } else {
-    console.log("It's a tie!")
+  for (let i = 0; i < numPlayers; i++) {
+    const player = players[i]
+    if ((player.score > finalDealerScore || dealerBusted) && !player.busted) {
+      console.log(`Player ${player.name} WINS against the dealer with a score of ${player.score}`)
+    } else if (player.score === finalDealerScore && !player.busted) {
+      console.log(`Player ${player.name} TIES against the dealer with a score of ${player.score}`)
+    } else {
+      console.log(`Player ${player.name} LOSES against the dealer with a score of ${player.score}`)
+    }
   }
+
+  console.log(JSON.stringify(players))
 
   rl.close()
+}
+
+async function givePlayerCard(player) {
+  const card = await getCard()
+  player.hand.push(card)
+  player.score = getScoreForHand(player.hand)
+  player.busted = player.score > 21
 }
 
 async function getCard() {
